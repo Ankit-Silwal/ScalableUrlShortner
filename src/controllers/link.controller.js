@@ -5,7 +5,7 @@ export const createLinkController = (service) => ({
   },
   get: async (req, res) => res.json({ success: true, data: await service.get(req.validated.params.code) }),
   list: async (req, res) => res.json({
-    success: true, data: await service.list(req.validated.query), pagination: req.validated.query,
+    success: true, ...await service.list(req.validated.query),
   }),
   delete: async (req, res) => {
     await service.delete(req.validated.params.code);

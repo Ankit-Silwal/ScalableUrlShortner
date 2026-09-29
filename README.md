@@ -74,7 +74,7 @@ Every `/api/v1/links` endpoint requires the `x-api-key` header. This is a single
 | Method | Path | Behavior |
 | --- | --- | --- |
 | POST | /api/v1/links | Create a short link |
-| GET | /api/v1/links?page=1&limit=20 | List links, newest first |
+| GET | /api/v1/links?limit=20&cursor=... | List links using indexed cursor pagination |
 | GET | /api/v1/links/:code | Get a link and click statistics |
 | DELETE | /api/v1/links/:code | Delete a link (204) |
 | GET | /:code | Redirect (302) and record a click |
@@ -98,7 +98,7 @@ $link.data.shortUrl
 Invoke-RestMethod -Uri 'http://localhost:3000/api/v1/links/launch' -Headers $headers
 ```
 
-Only `originalUrl` is required. URLs must use HTTP(S), have no embedded credentials, and be at most 2048 characters. Custom aliases are case-sensitive, 4-32 letters, digits, underscores, or hyphens; health/ready and other reserved aliases are rejected. Automatic codes use 48 cryptographically random bits and retry database collisions. Expiry timestamps must be ISO 8601 with a timezone and in the future.
+Only `originalUrl` is required. URLs must use HTTP(S), have no embedded credentials, and be at most 2048 characters. Custom aliases are case-sensitive, 4-32 letters, digits, underscores, or hyphens; health/ready and other reserved aliases are rejected. Automatic codes use 72 cryptographically random bits and retry database collisions. Expiry timestamps must be ISO 8601 with a timezone and in the future.
 
 Success responses use `{ "success": true, "data": ... }`. Errors use:
 
@@ -112,7 +112,7 @@ Success responses use `{ "success": true, "data": ... }`. Errors use:
 
 Status codes include 400 (invalid request), 401 (API key), 404 (missing), 409 (alias taken), 410 (expired), 413 (body too large), and 429 (rate limit).
 
-Expired links remain available to management and keep their alias reserved. Deleting a link releases its alias for reuse. GET redirects count requests, including bots, rather than unique visitors. Redirects and management responses use `Cache-Control: no-store` so caches do not bypass expiry and click counting.
+Expired links remain available to management and keep their alias reserved. Deleted aliases stay permanently reserved to prevent stale redirects or analytics being attributed to a new owner. GET redirects count requests, including bots, rather than unique visitors. Redirects and management responses use `Cache-Control: no-store` so caches do not bypass expiry and click counting.
 
 ## Configuration
 
@@ -158,6 +158,10 @@ This starts a temporary cluster bound to loopback on an available port, runs int
 
 Run migrations as a deployment step, then `npm start`. Put the API behind HTTPS and configure proxy trust for your actual network. SIGINT/SIGTERM stop accepting requests, drain in-flight work, and close the database pool with a 10-second shutdown deadline.
 
-Rate limits are held in each process's memory. Before horizontal scaling, use a shared rate-limit store and budget database connections across all replicas. Click counting writes synchronously to PostgreSQL; higher traffic may warrant asynchronous analytics. Pagination uses bounded offsets. This project does not include user accounts, destination malware scanning, or a public frontend.
+Rate limits are held in each process's memory. Before horizontal scaling, use a shared rate-limit store and budget database connections across all replicas. Click counting writes synchronously to PostgreSQL; higher traffic may warrant asynchronous analytics. Pagination uses the indexed (created_at, code) cursor. page=1 is accepted for compatibility; higher page numbers are rejected. This project does not include user accounts, destination malware scanning, or a public frontend.
 
 Reference: [node-postgres parameterized queries](https://node-postgres.com/features/queries), [Express error handling](https://expressjs.com/en/guide/error-handling/).
+
+## Scaling foundations
+
+Set REDIS_URL for shared limits across replicas (required in production). The cache uses bounded TTLs, negative entries, and deletion tombstones. /metrics requires the API key. Each process bounds in-flight requests and database connections. Further deployment and load-test documentation accompanies the worker rollout.

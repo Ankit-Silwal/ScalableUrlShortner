@@ -18,25 +18,26 @@ export class MemoryRepository {
     this.links.set(data.code, link);
     return link;
   }
-  async findByCode(code) { return this.links.get(code) ?? null; }
+  async findByCode(code) { const link = this.links.get(code); return link?.deleted ? null : link ?? null; }
   async recordClick(code, now) {
     const link = this.links.get(code);
-    if (!link || (link.expiresAt && link.expiresAt <= now)) return null;
+    if (!link || link.deleted || (link.expiresAt && link.expiresAt <= now)) return null;
     link.clicks++;
     link.lastClickedAt = now;
     return link;
   }
-  async list({ page, limit }) { return [...this.links.values()].slice((page - 1) * limit, page * limit); }
+  async list({ limit, after }) { return [...this.links.values()].filter((link) => !link.deleted).sort((a,b) => b.createdAt - a.createdAt || b.code.localeCompare(a.code)).filter((link) => !after || link.createdAt < new Date(after.createdAt) || (+link.createdAt === +new Date(after.createdAt) && link.code < after.code)).slice(0, limit); }
   async deleteByCode(code) {
     const link = this.links.get(code);
-    this.links.delete(code);
+    if (link?.deleted) return null;
+    if (link) link.deleted = true;
     return link;
   }
 }
 
 export async function fixture(t, options = {}) {
   const repository = options.repository ?? new MemoryRepository();
-  const app = createApp({ config: { ...config, ...options.config }, repository, logger: pino({ level: 'silent' }), isReady: options.isReady });
+  const app = createApp({ config: { ...config, ...options.config }, repository, logger: pino({ level: 'silent' }), isReady: options.isReady, redis: options.redis, cache: options.cache, analytics: options.analytics, metrics: options.metrics });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => new Promise((resolve) => server.close(resolve)));
@@ -46,5 +47,5 @@ export async function fixture(t, options = {}) {
     headers: { ...(auth ? { 'x-api-key': config.API_KEY } : {}), ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...headers },
     ...(rawBody !== undefined ? { body: rawBody } : body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
-  return { request, repository };
+  return { request, repository, base };
 }

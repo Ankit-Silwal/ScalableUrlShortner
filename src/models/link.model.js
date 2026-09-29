@@ -3,6 +3,7 @@ export function toLink(row) {
   if (!row) return null;
   return {
     code: row.code,
+    cursorTimestamp: row.cursor_timestamp,
     originalUrl: row.original_url,
     expiresAt: row.expires_at,
     clicks: Number(row.clicks),

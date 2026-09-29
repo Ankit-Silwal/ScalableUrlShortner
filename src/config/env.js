@@ -11,7 +11,14 @@ const schema = z.object({
       && url.pathname === '/' && !url.search && !url.hash;
   }, 'Must be an HTTP(S) origin without a path, query, or credentials'),
   DATABASE_URL: z.string().regex(/^postgres(?:ql)?:\/\//),
-  DB_POOL_MAX: positiveInteger(20),
+  DB_POOL_MAX: positiveInteger(10),
+  DB_QUERY_TIMEOUT_MS: positiveInteger(2000),
+  REDIS_URL: z.union([z.string().regex(/^rediss?:\/\//), z.literal('')]).default(''),
+  REDIS_PREFIX: z.string().regex(/^[a-zA-Z0-9:_-]{1,64}$/).default('shortener'),
+  REDIS_TIMEOUT_MS: positiveInteger(500),
+  CACHE_TTL_SECONDS: z.coerce.number().int().min(1).max(300).default(60),
+  MAX_INFLIGHT_REQUESTS: positiveInteger(500),
+  HTTP_LOG_ENABLED: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   API_KEY: z.string().min(32),
   CORS_ORIGINS: z.string().default(''),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
@@ -22,7 +29,9 @@ const schema = z.object({
 });
 
 export function loadConfig(environment = process.env) {
-  const result = schema.safeParse(environment);
+  const result = schema.superRefine((config, ctx) => {
+    if (config.NODE_ENV === 'production' && !config.REDIS_URL) ctx.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'Redis is required in production' });
+  }).safeParse(environment);
   if (!result.success) {
     throw new Error(`Invalid environment configuration: ${[...new Set(result.error.issues.map((issue) => issue.path.join('.')))].join(', ')}. Check .env.example.`);
   }

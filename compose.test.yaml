@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: shortener_test
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: shortener_test
+    ports:
+      - "127.0.0.1:54329:5432"
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shortener_test -d shortener_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "127.0.0.1:6389:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
