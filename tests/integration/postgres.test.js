@@ -20,7 +20,7 @@ test('PostgreSQL migrations, concurrency, expiry and complete HTTP lifecycle', {
   });
   await migrate(pool);
   await migrate(pool);
-  assert.equal((await pool.query('SELECT * FROM schema_migrations')).rows.length, 2);
+  assert.equal((await pool.query('SELECT * FROM schema_migrations')).rows.length, 3);
   const repository = new LinkRepository(pool);
   const { request } = await fixture(t, { repository });
   const body = { originalUrl: 'https://example.com/a?b=1', customAlias: 'parallel' };

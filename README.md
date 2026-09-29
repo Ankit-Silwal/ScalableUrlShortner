@@ -165,3 +165,17 @@ Reference: [node-postgres parameterized queries](https://node-postgres.com/featu
 ## Scaling foundations
 
 Set REDIS_URL for shared limits across replicas (required in production). The cache uses bounded TTLs, negative entries, and deletion tombstones. /metrics requires the API key. Each process bounds in-flight requests and database connections. Further deployment and load-test documentation accompanies the worker rollout.
+
+## Multi-instance deployment
+
+Set API_KEY, BASE_URL, and a URL-safe POSTGRES_PASSWORD in .env, then run:
+
+```powershell
+docker compose -f compose.scale.yaml up -d --build --scale api=3 --scale worker=2
+```
+
+The gateway listens on 127.0.0.1:8080; use an HTTPS ingress in production. PostgreSQL and Redis have no published ports in this stack. Migrations finish before API and worker startup. Shared Redis limits work across replicas.
+
+With Redis enabled, redirects enqueue clicks into 16 streams and workers batch updates. Counts are eventually consistent. Each partition checkpoint and its count updates commit in the same PostgreSQL transaction. Uncommitted events are never trimmed. The queue is bounded; enqueue failure/full queue preserves redirects but increments dropped-event metrics. Redis must use noeviction and persistent storage; the sample uses AOF every second, which can lose about one second of events on a Redis crash. Redis rate-limit failure returns 503.
+
+Run npm run worker alongside npm start when running without Docker but with REDIS_URL configured. For a complete container smoke test, build the image then run npm run test:compose.

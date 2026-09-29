@@ -1,0 +1,88 @@
+name: shortener-scale
+x-app-environment: &app-environment
+  NODE_ENV: production
+  PORT: 3000
+  WORKER_PORT: 9100
+  BASE_URL: ${BASE_URL:-http://localhost:8080}
+  DATABASE_URL: postgresql://shortener:${POSTGRES_PASSWORD:?Set a URL-safe POSTGRES_PASSWORD}@postgres:5432/url_shortener
+  REDIS_URL: redis://redis:6379
+  REDIS_PREFIX: shortener
+  API_KEY: ${API_KEY:?Set API_KEY to at least 32 characters}
+  DB_POOL_MAX: ${DB_POOL_MAX:-10}
+  TRUST_PROXY_HOPS: 1
+  HTTP_LOG_ENABLED: "false"
+  API_RATE_LIMIT: ${API_RATE_LIMIT:-60}
+  REDIRECT_RATE_LIMIT: ${REDIRECT_RATE_LIMIT:-300}
+  ANALYTICS_STREAM_MAX_LENGTH: ${ANALYTICS_STREAM_MAX_LENGTH:-100000}
+x-app: &app
+  build: .
+  image: shortener-local:latest
+  restart: unless-stopped
+  init: true
+  environment: *app-environment
+  stop_grace_period: 15s
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shortener
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: url_shortener
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shortener -d url_shortener"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["node", "scripts/migrate.js"]
+    depends_on:
+      postgres: { condition: service_healthy }
+  api:
+    <<: *app
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 4s
+      retries: 3
+  worker:
+    <<: *app
+    command: ["node", "src/worker.js"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9100/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 4s
+      retries: 3
+  gateway:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api: { condition: service_healthy }
+volumes:
+  postgres_data:
+  redis_data:

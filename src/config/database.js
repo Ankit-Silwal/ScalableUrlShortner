@@ -15,7 +15,7 @@ export function createPool(config, logger) {
 
 export async function isDatabaseReady(pool) {
   try {
-    await pool.query('SELECT code, deleted_at FROM links LIMIT 0');
+    await pool.query('SELECT code, deleted_at FROM links, analytics_checkpoints LIMIT 0');
     return true;
   } catch {
     return false;

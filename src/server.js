@@ -1,3 +1,4 @@
+import { ClickStream } from './infrastructure/click-stream.js';
 import { createRedis } from './config/redis.js';
 import { LinkCache } from './infrastructure/link-cache.js';
 import { createMetrics } from './infrastructure/metrics.js';
@@ -37,7 +38,8 @@ try {
   if (redis) await redis.connect();
   const metrics = createMetrics();
   const cache = redis ? new LinkCache(redis, { prefix: config.REDIS_PREFIX, ttlSeconds: config.CACHE_TTL_SECONDS }) : null;
-  const app = createApp({ config, repository: new LinkRepository(pool), logger, redis, cache, metrics,
+  const analytics = redis ? new ClickStream(redis, { prefix: config.REDIS_PREFIX, maxLength: config.ANALYTICS_STREAM_MAX_LENGTH, metrics }) : null;
+  const app = createApp({ config, repository: new LinkRepository(pool), logger, redis, cache, analytics, metrics,
     isReady: async () => !stopping && (!redis || redis.status === 'ready') && await isDatabaseReady(pool),
   });
   server = app.listen(config.PORT, () => logger.info({ port: config.PORT }, 'URL shortener listening'));

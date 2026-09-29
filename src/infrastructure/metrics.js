@@ -1,4 +1,4 @@
-import { Registry, Counter, Histogram, collectDefaultMetrics } from '@prometheus-io/client';
+import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from '@prometheus-io/client';
 
 export function createMetrics() {
   const registry = new Registry();
@@ -6,6 +6,7 @@ export function createMetrics() {
   const counter = (name, help, labelNames = []) => new Counter({ name, help, labelNames, registers: [registry] });
   return {
     registry,
+    lag: new Gauge({ name: 'shortener_analytics_lag_seconds', help: 'Age of the oldest unprocessed event per partition', labelNames: ['partition'], registers: [registry] }),
     cache: counter('shortener_cache_total', 'Cache outcomes', ['result']),
     analytics: counter('shortener_analytics_events_total', 'Analytics enqueue outcomes', ['result']),
     batches: counter('shortener_analytics_batches_total', 'Committed analytics batches'),
