@@ -1,0 +1,228 @@
+{
+  "measuredAt": "2026-09-29T17:31:49.244Z",
+  "datasetRows": 1000000,
+  "topology": "2 separate Node API processes, 1 worker, Docker PostgreSQL and Redis; direct round-robin client, no Nginx in timed path",
+  "host": {
+    "platform": "win32",
+    "node": "v24.11.0",
+    "cpu": "AMD Ryzen 7 7445HS w/ Radeon 740M Graphics     ",
+    "logicalCpus": 12,
+    "memoryGiB": 15.3
+  },
+  "seedSeconds": 6.74,
+  "tableAndIndexBytes": 221863936,
+  "warmup": {
+    "durationSeconds": 3,
+    "concurrency": 8,
+    "completed": 5430,
+    "errors": 0,
+    "statuses": {
+      "302": 5430
+    },
+    "requestsPerSecond": 1807.06,
+    "expectedStatus": 302,
+    "unexpectedResponses": 0,
+    "latencyMs": {
+      "p50": 3.995647,
+      "p95": 7.041023,
+      "p99": 9.265151
+    }
+  },
+  "results": [
+    {
+      "name": "hot-link",
+      "durationSeconds": 15.01,
+      "concurrency": 32,
+      "completed": 59054,
+      "errors": 0,
+      "statuses": {
+        "302": 59054
+      },
+      "requestsPerSecond": 3935.24,
+      "expectedStatus": 302,
+      "unexpectedResponses": 0,
+      "latencyMs": {
+        "p50": 7.798783,
+        "p95": 11.272191,
+        "p99": 14.516223
+      }
+    },
+    {
+      "name": "mixed-80-percent-hot",
+      "durationSeconds": 15.01,
+      "concurrency": 32,
+      "completed": 48473,
+      "errors": 0,
+      "statuses": {
+        "302": 48473
+      },
+      "requestsPerSecond": 3229.65,
+      "expectedStatus": 302,
+      "unexpectedResponses": 0,
+      "latencyMs": {
+        "p50": 8.880127,
+        "p95": 16.056319,
+        "p99": 21.086207
+      }
+    },
+    {
+      "name": "uniform-million-links",
+      "durationSeconds": 15.01,
+      "concurrency": 32,
+      "completed": 41995,
+      "errors": 0,
+      "statuses": {
+        "302": 41995
+      },
+      "requestsPerSecond": 2798,
+      "expectedStatus": 302,
+      "unexpectedResponses": 0,
+      "latencyMs": {
+        "p50": 11.436031,
+        "p95": 16.064511,
+        "p99": 19.300351
+      }
+    }
+  ],
+  "expectedClicks": 154952,
+  "appliedClicks": 154952,
+  "drainSeconds": 1.39,
+  "cacheHits": 111578,
+  "lookupPlan": [
+    {
+      "Plan": {
+        "Node Type": "Index Scan",
+        "Parallel Aware": false,
+        "Async Capable": false,
+        "Scan Direction": "Forward",
+        "Index Name": "links_pkey",
+        "Relation Name": "links",
+        "Alias": "links",
+        "Startup Cost": 0.42,
+        "Total Cost": 8.44,
+        "Plan Rows": 1,
+        "Plan Width": 98,
+        "Actual Startup Time": 0.033,
+        "Actual Total Time": 0.034,
+        "Actual Rows": 1,
+        "Actual Loops": 1,
+        "Disabled": false,
+        "Index Cond": "((code)::text = 'bench_00500000'::text)",
+        "Rows Removed by Index Recheck": 0,
+        "Filter": "(deleted_at IS NULL)",
+        "Rows Removed by Filter": 0,
+        "Index Searches": 1,
+        "Shared Hit Blocks": 4,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning": {
+        "Shared Hit Blocks": 18,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning Time": 0.07,
+      "Triggers": [],
+      "Execution Time": 0.041
+    }
+  ],
+  "cursorPlan": [
+    {
+      "Plan": {
+        "Node Type": "Limit",
+        "Parallel Aware": false,
+        "Async Capable": false,
+        "Startup Cost": 0.42,
+        "Total Cost": 6.36,
+        "Plan Rows": 21,
+        "Plan Width": 58,
+        "Actual Startup Time": 0.039,
+        "Actual Total Time": 0.043,
+        "Actual Rows": 21,
+        "Actual Loops": 1,
+        "Disabled": false,
+        "Shared Hit Blocks": 4,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0,
+        "Plans": [
+          {
+            "Node Type": "Index Scan",
+            "Parent Relationship": "Outer",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Scan Direction": "Forward",
+            "Index Name": "links_active_created_at_code_idx",
+            "Relation Name": "links",
+            "Alias": "links",
+            "Startup Cost": 0.42,
+            "Total Cost": 27733.25,
+            "Plan Rows": 98176,
+            "Plan Width": 58,
+            "Actual Startup Time": 0.038,
+            "Actual Total Time": 0.041,
+            "Actual Rows": 21,
+            "Actual Loops": 1,
+            "Disabled": false,
+            "Index Cond": "(ROW(created_at, (code)::text) < ROW('2026-09-29 17:15:51.193317+00'::timestamp with time zone, 'bench_00900000'::text))",
+            "Rows Removed by Index Recheck": 0,
+            "Index Searches": 1,
+            "Shared Hit Blocks": 4,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          }
+        ]
+      },
+      "Planning": {
+        "Shared Hit Blocks": 18,
+        "Shared Read Blocks": 3,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning Time": 0.191,
+      "Triggers": [],
+      "Execution Time": 0.056
+    }
+  ],
+  "limitations": [
+    "Short local closed-loop test; not a 24-hour soak, availability SLA, or production capacity guarantee.",
+    "Load generator, API processes, worker and database share one host.",
+    "Rate limits deliberately raised for load generation; production defaults remain enabled.",
+    "Test Redis has persistence disabled; repeat with production AOF, TLS, gateway, and workload before deployment."
+  ],
+  "cacheMisses": 43374,
+  "analyticsBatches": 2400
+}

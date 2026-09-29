@@ -1,13 +1,12 @@
-# URL Shortener
+# Scalable URL Shortener
 
-Node.js (JavaScript), Express 5, and PostgreSQL. Includes authenticated link management, public redirects, custom aliases, expiry dates, click counts, request validation, rate limiting, structured logging, and SQL migrations.
+A Node.js / Express / PostgreSQL URL shortener designed for millions of stored links and millions of redirects per day. Redis provides shared caching, rate limits, and a bounded click stream; independent workers batch analytics into PostgreSQL.
 
-## Requirements and setup
+**Measured locally with 1,000,000 stored links:** 2,798-3,935 redirects/second across three traffic patterns, zero request errors, and 154,952/154,952 clicks applied. This is a short local benchmark, not a production SLA. See [the benchmark report](docs/benchmarks/2026-09-29.md) for hardware, methodology, raw results, and limitations.
 
-- Node.js 22.13+ (Node 24 recommended)
-- PostgreSQL, locally or hosted
+## Start locally
 
-Dependencies are pinned in `package-lock.json`.
+Requirements: Node.js 22.13+ (24 recommended), PostgreSQL, and Redis for the scalable mode.
 
 ```powershell
 npm ci
@@ -15,74 +14,96 @@ Copy-Item .env.example .env
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-Set `API_KEY` to the generated secret, `DATABASE_URL` to your PostgreSQL connection string, and `BASE_URL` to your public origin. The app validates configuration and refuses to start with missing required settings. Keep `.env` private; it is ignored by Git.
+If you already have `.env`, edit it without overwriting it. Set:
 
-For the optional local Docker database:
+- `DATABASE_URL`: PostgreSQL connection URI.
+- `API_KEY`: generated random secret, at least 32 characters.
+- `BASE_URL`: origin for your short URLs, e.g. `http://localhost:3000`.
+- `REDIS_URL`: e.g. `redis://127.0.0.1:6379`.
 
-```powershell
-docker compose up -d postgres
-```
-
-The development connection string in `.env.example` matches Docker Compose. If PostgreSQL is already on port 5432, use that instance or change the Compose port and your connection string. Create the database first when using an existing PostgreSQL server.
-
-Apply migrations, then start:
+Optional local dependencies (the database defaults match `.env.example`):
 
 ```powershell
+docker compose up -d postgres redis
 npm run db:migrate
 npm run dev
-# Or: npm start
 ```
 
-Migrations are explicit, transactional, tracked in `schema_migrations`, and protected by a PostgreSQL advisory lock. Startup checks that the database and links table are available.
+In a second terminal:
+
+```powershell
+npm run worker
+```
+
+Without `REDIS_URL`, development uses synchronous PostgreSQL click updates and per-process rate limits. Production requires Redis. With Redis configured, run the worker for click statistics to advance.
+
+## Run multiple instances
+
+Set `API_KEY`, a URL-safe `POSTGRES_PASSWORD` (generated hex works), and `BASE_URL=http://localhost:8080` in `.env`:
+
+```powershell
+docker compose -f compose.scale.yaml up -d --build --scale api=3 --scale worker=2
+```
+
+This runs Nginx, three independent API processes, two analytics workers, PostgreSQL, and persistent Redis. Migrations finish before app startup. Only Nginx is published, on loopback port 8080. Put an HTTPS ingress in front of it for public deployment. This single-machine Compose stack demonstrates horizontal application scaling; managed database/Redis failover and multiple hosts are separate production infrastructure.
 
 ## Architecture
 
-```text
-src/
-  app.js                         Express composition; independently testable
-  server.js                      Startup, HTTP server, graceful shutdown
-  config/
-    env.js                       Validated environment settings
-    database.js                  PostgreSQL pool and readiness check
-    migrations.js                Transactional SQL migration runner
-  routes/link.routes.js          API endpoint registration
-  controllers/link.controller.js HTTP input/output
-  services/link.service.js       Short codes and link business rules
-  repositories/link.repository.js Parameterized PostgreSQL queries
-  models/link.model.js           Database row to domain model mapping
-  validators/link.validator.js  Request schemas
-  middleware/
-    auth.js                      Constant-time API key verification
-    validate.js                  Request validation
-    rate-limit.js                Per-IP request limits
-    error-handler.js             Consistent safe error responses
-  utils/app-error.js              Expected application errors
-migrations/                      Versioned SQL schema
-scripts/                         Migration and local database test commands
-tests/                           Service and HTTP tests
-tests/integration/               Real PostgreSQL integration tests
+```mermaid
+flowchart LR
+  Client --> Gateway[Nginx / HTTPS ingress]
+  Gateway --> APIs[Stateless Node API replicas]
+  APIs --> Limits[Redis shared rate limits]
+  APIs --> Cache[Redis URL cache]
+  Cache -. cache miss .-> DB[(PostgreSQL)]
+  APIs --> Queue[Redis click streams]
+  Queue --> Workers[Analytics workers]
+  Workers --> DB
 ```
 
-Request flow: route -> middleware -> controller -> service -> repository -> PostgreSQL.
+```text
+src/
+  app.js                       Express dependency composition
+  server.js                    API startup and graceful shutdown
+  worker.js                    Worker startup, health, metrics, shutdown
+  config/                      Environment, PostgreSQL, Redis, migrations
+  routes/                      Route registration
+  controllers/                 HTTP request/response handling
+  services/                    Business rules and cache lookup flow
+  repositories/                Parameterized PostgreSQL queries
+  models/                      Database/domain mapping
+  validators/                  Request schemas
+  middleware/                  Auth, validation, shared limits, overload, errors
+  infrastructure/              Redis cache, click streams, Prometheus metrics
+  workers/                     Batched analytics and durable checkpoints
+  utils/                       Application errors and pagination cursors
+migrations/                    Versioned transactional SQL
+deploy/                        Nginx configuration
+scripts/                       Migration, load, benchmark, and smoke-test tools
+tests/                         Unit/HTTP and real PostgreSQL/Redis integration tests
+docs/                          Scaling design, operations, and measured benchmarks
+.github/workflows/             Automated tests and container checks
+```
 
-The application factory receives dependencies, so tests can replace storage without starting the production server. PostgreSQL is the source of truth: its primary key handles alias conflicts, and a single conditional UPDATE checks expiry and increments click counts atomically.
+See [how scaling works](docs/SCALING.md) and [deployment/operations](docs/OPERATIONS.md).
 
 ## API
 
-Every `/api/v1/links` endpoint requires the `x-api-key` header. This is a single-owner/backend service: anyone with the key can manage all links. Never embed the key in a public frontend. Redirects do not require authentication.
+All management endpoints require `x-api-key`. This is a single-owner/backend service: the key can manage every link. Keep it on your backend rather than embedding it in a public frontend.
 
 | Method | Path | Behavior |
 | --- | --- | --- |
-| POST | /api/v1/links | Create a short link |
-| GET | /api/v1/links?limit=20&cursor=... | List links using indexed cursor pagination |
-| GET | /api/v1/links/:code | Get a link and click statistics |
-| DELETE | /api/v1/links/:code | Delete a link (204) |
-| GET | /:code | Redirect (302) and record a click |
-| HEAD | /:code | Redirect headers without counting a click |
-| GET | /health | Process health |
-| GET | /ready | Database readiness (200 or 503) |
+| POST | /api/v1/links | Create link |
+| GET | /api/v1/links?limit=20&cursor=... | List newest links using a cursor |
+| GET | /api/v1/links/:code | Link details and eventually consistent click counts |
+| DELETE | /api/v1/links/:code | Soft-delete link; returns 204 |
+| GET | /:code | Public 302 redirect and enqueue a click |
+| HEAD | /:code | Redirect headers without a click |
+| GET | /health | Process liveness |
+| GET | /ready | Dependency readiness |
+| GET | /metrics | Prometheus metrics; API key required |
 
-Create a link in PowerShell (replace the key):
+Create a link:
 
 ```powershell
 $headers = @{ 'x-api-key' = 'YOUR_API_KEY' }
@@ -91,16 +112,17 @@ $body = @{
   customAlias = 'launch'
   # Optional: expiresAt = '2030-12-31T23:59:59Z'
 } | ConvertTo-Json
-
 $link = Invoke-RestMethod -Method Post -Uri 'http://localhost:3000/api/v1/links' -Headers $headers -ContentType 'application/json' -Body $body
 $link.data.shortUrl
-
-Invoke-RestMethod -Uri 'http://localhost:3000/api/v1/links/launch' -Headers $headers
 ```
 
-Only `originalUrl` is required. URLs must use HTTP(S), have no embedded credentials, and be at most 2048 characters. Custom aliases are case-sensitive, 4-32 letters, digits, underscores, or hyphens; health/ready and other reserved aliases are rejected. Automatic codes use 72 cryptographically random bits and retry database collisions. Expiry timestamps must be ISO 8601 with a timezone and in the future.
+Only `originalUrl` is required. It must be HTTP(S), contain no embedded credentials, and be at most 2048 characters. Aliases are case-sensitive, 4-32 letters, digits, underscores, or hyphens; system paths are reserved. Generated codes use 72 random bits with database collision retries. Expiry must be a future ISO 8601 timestamp with timezone.
 
-Success responses use `{ "success": true, "data": ... }`. Errors use:
+Listing returns `{ success, data, pagination: { limit, nextCursor } }`. Pass `nextCursor` unchanged for the next page; null means the end. Cursors preserve PostgreSQL microsecond precision. `page=1` remains accepted; use cursors instead of higher page numbers.
+
+Expired links return 410. Missing/deleted links return 404. Deleted aliases remain permanently reserved, preventing old URLs or delayed analytics from being assigned to a new destination. Statistics count GET requests including bots, not unique people. Responses use `Cache-Control: no-store`.
+
+Errors use:
 
 ```json
 {
@@ -110,72 +132,34 @@ Success responses use `{ "success": true, "data": ... }`. Errors use:
 }
 ```
 
-Status codes include 400 (invalid request), 401 (API key), 404 (missing), 409 (alias taken), 410 (expired), 413 (body too large), and 429 (rate limit).
+Other statuses: 400 invalid input, 401 invalid API key, 409 reserved alias, 413 oversized body, 429 shared rate limit, 503 overload or unavailable request protection.
 
-Expired links remain available to management and keep their alias reserved. Deleted aliases stay permanently reserved to prevent stale redirects or analytics being attributed to a new owner. GET redirects count requests, including bots, rather than unique visitors. Redirects and management responses use `Cache-Control: no-store` so caches do not bypass expiry and click counting.
-
-## Configuration
-
-| Setting | Purpose |
-| --- | --- |
-| DATABASE_URL | PostgreSQL connection URI; use your provider's verified TLS configuration for hosted databases |
-| API_KEY | Required shared secret, at least 32 characters |
-| BASE_URL | Public HTTP(S) origin used to construct short links |
-| PORT | HTTP port, defaults to 3000 |
-| DB_POOL_MAX | Maximum database connections per app process, defaults to 20 |
-| CORS_ORIGINS | Comma-separated allowed browser origins; empty disables cross-origin access |
-| TRUST_PROXY_HOPS | Defaults to 0; configure only for your known proxy topology |
-| RATE_LIMIT_WINDOW_MS | Rate limit window, defaults to 60000 |
-| API_RATE_LIMIT | Management requests per IP per window, defaults to 60 |
-| REDIRECT_RATE_LIMIT | Redirect requests per IP per window, defaults to 300 |
-| LOG_LEVEL | Defaults to info |
-| NODE_ENV | development, test, or production |
-
-Requests have generated IDs. Logs omit API keys, bodies, destination URLs, and query strings. Error responses do not expose database details.
-
-## Tests
+## Verification
 
 ```powershell
 npm test
-# Real database tests create and drop a randomly named schema in this database:
-$env:TEST_DATABASE_URL = 'postgresql://user:password@localhost:5432/shortener_test'
+docker compose -p shortener-tests -f compose.test.yaml up -d --wait
+$env:TEST_DATABASE_URL = 'postgresql://shortener_test:test_password@127.0.0.1:54329/shortener_test'
+$env:TEST_REDIS_URL = 'redis://127.0.0.1:6389'
 npm run test:integration
+docker build -t shortener-local:latest .
+npm run test:compose
+npm run benchmark:million
 ```
 
-The database user needs permission to create schemas. The integration suite verifies migrations, simultaneous alias creation, concurrent click increments, expiry, and the API lifecycle. Without `TEST_DATABASE_URL`, it reports a skipped test.
+Integration tests create/drop only their randomly named PostgreSQL schemas and Redis namespaces. The Compose smoke test starts its own project on port 18080 and removes that project's containers and volumes afterward. The benchmark seeds an isolated million-row schema, launches two API processes plus a worker, verifies final click totals, saves reports to ignored `benchmark-results/`, and cleans up.
 
-Alternatively, with PostgreSQL command-line binaries installed:
+`npm run test:postgres:local` is also available if PostgreSQL command-line binaries are installed; `PG_BIN` can point to their directory. It tests PostgreSQL using a temporary cluster without touching your app database.
+
+For an existing test deployment:
 
 ```powershell
-# Only needed if PostgreSQL binaries are not on PATH:
-$env:PG_BIN = 'C:\Program Files\PostgreSQL\18\bin'
-npm run test:postgres:local
+$env:LOAD_URL = 'http://localhost:8080/your-test-link'
+$env:LOAD_CONCURRENCY = '32'
+$env:LOAD_DURATION_SECONDS = '30'
+npm run load:test
 ```
 
-This starts a temporary cluster bound to loopback on an available port, runs integration tests, and stops/removes its own cluster afterward. It does not use your application database.
+The generator follows no redirects and expects 302. It fails on transport errors or unexpected statuses, including 429. Adjust limits only in your dedicated benchmark environment.
 
-## Deployment notes
-
-Run migrations as a deployment step, then `npm start`. Put the API behind HTTPS and configure proxy trust for your actual network. SIGINT/SIGTERM stop accepting requests, drain in-flight work, and close the database pool with a 10-second shutdown deadline.
-
-Rate limits are held in each process's memory. Before horizontal scaling, use a shared rate-limit store and budget database connections across all replicas. Click counting writes synchronously to PostgreSQL; higher traffic may warrant asynchronous analytics. Pagination uses the indexed (created_at, code) cursor. page=1 is accepted for compatibility; higher page numbers are rejected. This project does not include user accounts, destination malware scanning, or a public frontend.
-
-Reference: [node-postgres parameterized queries](https://node-postgres.com/features/queries), [Express error handling](https://expressjs.com/en/guide/error-handling/).
-
-## Scaling foundations
-
-Set REDIS_URL for shared limits across replicas (required in production). The cache uses bounded TTLs, negative entries, and deletion tombstones. /metrics requires the API key. Each process bounds in-flight requests and database connections. Further deployment and load-test documentation accompanies the worker rollout.
-
-## Multi-instance deployment
-
-Set API_KEY, BASE_URL, and a URL-safe POSTGRES_PASSWORD in .env, then run:
-
-```powershell
-docker compose -f compose.scale.yaml up -d --build --scale api=3 --scale worker=2
-```
-
-The gateway listens on 127.0.0.1:8080; use an HTTPS ingress in production. PostgreSQL and Redis have no published ports in this stack. Migrations finish before API and worker startup. Shared Redis limits work across replicas.
-
-With Redis enabled, redirects enqueue clicks into 16 streams and workers batch updates. Counts are eventually consistent. Each partition checkpoint and its count updates commit in the same PostgreSQL transaction. Uncommitted events are never trimmed. The queue is bounded; enqueue failure/full queue preserves redirects but increments dropped-event metrics. Redis must use noeviction and persistent storage; the sample uses AOF every second, which can lose about one second of events on a Redis crash. Redis rate-limit failure returns 503.
-
-Run npm run worker alongside npm start when running without Docker but with REDIS_URL configured. For a complete container smoke test, build the image then run npm run test:compose.
+GitHub Actions runs unit/HTTP tests, real PostgreSQL/Redis integration tests, dependency auditing, an image build, and the multi-replica Compose smoke test on pushes to main.

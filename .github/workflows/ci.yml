@@ -38,4 +38,5 @@ jobs:
       - run: npm test
       - run: npm run test:integration
       - run: npm audit --omit=dev
-      - run: docker build -t shortener-ci .
+      - run: docker build -t shortener-local:latest .
+      - run: npm run test:compose

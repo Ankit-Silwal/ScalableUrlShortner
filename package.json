@@ -15,7 +15,9 @@
     "db:migrate": "node scripts/migrate.js",
     "test:postgres:local": "node scripts/test-postgres-local.js",
     "worker": "node src/worker.js",
-    "test:compose": "node scripts/compose-smoke.js"
+    "test:compose": "node scripts/compose-smoke.js",
+    "load:test": "node scripts/load-test.js",
+    "benchmark:million": "node scripts/benchmark-million.js"
   },
   "dependencies": {
     "@prometheus-io/client": "0.16.1",
